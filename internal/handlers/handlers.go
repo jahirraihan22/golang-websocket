@@ -6,6 +6,7 @@ import (
 	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
+	"sort"
 )
 
 var wsChan = make(chan WsPayload)
@@ -27,9 +28,10 @@ type WebSocketConnection struct {
 }
 
 type WsJsonResponse struct {
-	Action      string `json:"action"`
-	Message     string `json:"message"`
-	MessageType string `json:"message_type"`
+	Action         string   `json:"action"`
+	Message        string   `json:"message"`
+	MessageType    string   `json:"message_type"`
+	ConnectedUsers []string `json:"connected_users"`
 }
 
 type WsPayload struct {
@@ -74,10 +76,42 @@ func ListenToWsChannel() {
 
 	for {
 		evt := <-wsChan
-		response.Action = "Got here"
-		response.Message = fmt.Sprintf("Some chit chat %s", evt.Action)
-		broadcastToAll(response)
+
+		switch evt.Action {
+		case "username":
+			// get list of users
+			clients[evt.Conn] = evt.Username
+			response.Action = "list_users"
+			response.ConnectedUsers = getUserList()
+			broadcastToAll(response)
+			break
+
+		case "left":
+			response.Action = "list_users"
+			delete(clients, evt.Conn)
+			response.ConnectedUsers = getUserList()
+			broadcastToAll(response)
+			break
+
+		case "broadcast":
+			response.Action = "broadcast"
+			response.Message = fmt.Sprintf("<b>%s</b>: %s", evt.Username, evt.Message)
+			broadcastToAll(response)
+			break
+		}
 	}
+}
+
+func getUserList() []string {
+	var userList []string
+	for _, i := range clients {
+		if i != "" {
+			userList = append(userList, i)
+		}
+	}
+	log.Println(userList)
+	sort.Strings(userList)
+	return userList
 }
 
 func broadcastToAll(response WsJsonResponse) {
